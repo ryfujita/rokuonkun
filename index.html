@@ -9,7 +9,8 @@
     .container { background: rgba(255, 255, 255, 0.95); padding: 30px; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); max-width: 550px; margin: auto; }
     h1 { color: #667eea; text-align: center; }
     .input-group { margin-bottom: 20px; }
-    input[type="text"] { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 12px; }
+    .input-group label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px; }
+    input[type="text"], select { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 15px; }
     .button-group { display: flex; gap: 10px; margin: 20px 0; }
     button { flex: 1; color: white; border: none; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
     #recordButton { background: #11998e; }
@@ -24,9 +25,21 @@
 <body>
   <div class="container">
     <h1>🎙️ 録音くん</h1>
+    
     <div class="input-group">
-      <input type="text" id="nicknameInput" placeholder="グループ名を入力">
+      <label>✨ グループを選択:</label>
+      <select id="groupSelect">
+        <option value="">-- グループを選択してください --</option>
+        <option value="たぬきチーム">たぬきチーム</option>
+        <option value="クールファイブ">クールファイブ</option>
+      </select>
     </div>
+
+    <div class="input-group">
+      <label>✨ ニックネーム:</label>
+      <input type="text" id="nicknameInput" placeholder="例: 山田太郎">
+    </div>
+
     <div class="button-group">
       <button id="recordButton">🔴 録音開始</button>
       <button id="stopButton" disabled>⏹️ 停止</button>
@@ -40,6 +53,7 @@
     const stopButton = document.getElementById('stopButton');
     const saveButton = document.getElementById('saveButton');
     const statusDisplay = document.getElementById('status');
+    const groupSelect = document.getElementById('groupSelect');
     const nicknameInput = document.getElementById('nicknameInput');
     
     let mediaRecorder;
@@ -48,7 +62,7 @@
     let stream = null;
 
     recordButton.onclick = async () => {
-      if (!nicknameInput.value.trim()) return alert('グループ名を入力してください');
+      if (!groupSelect.value || !nicknameInput.value.trim()) return alert('グループ選択とニックネーム入力をしてください');
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
@@ -78,15 +92,13 @@
       reader.readAsDataURL(mp3Blob);
       reader.onloadend = async () => {
         const base64Data = reader.result.split(',')[1];
-        
-        // ★ここを書き換えてください★
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxSMniqNo-OIEPt7AqULUXHi1ZWPQW-G0iOv05e__9EVTc9HXn7lWAMu_dcCyquQ2rjNA/exec";
         
         await fetch(GAS_URL, {
           method: "POST",
           mode: "no-cors",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `data=${encodeURIComponent(base64Data)}&filename=${nicknameInput.value}.mp3&mimetype=audio/mpeg`
+          body: `data=${encodeURIComponent(base64Data)}&filename=${groupSelect.value}_${nicknameInput.value}.mp3&mimetype=audio/mpeg`
         });
         statusDisplay.textContent = '🎉 保存完了！';
         statusDisplay.className = 'success';
@@ -94,61 +106,31 @@
     };
 
     async function encodeToMp3(audioBlob) {
-      console.log("Starting MP3 encoding for blob type:", audioBlob.type, "size:", audioBlob.size);
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer).catch(e => {
-        console.error("decodeAudioData error:", e);
-        throw new Error("音声データのデコードに失敗しました。録音形式に問題がある可能性があります。 " + e.message);
-      });
-
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       const numChannels = audioBuffer.numberOfChannels;
       const sampleRate = audioBuffer.sampleRate;
-      const kbps = 128; // ビットレート
-
-      const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, kbps);
+      const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, 128);
       const mp3Data = [];
-
-      // Float32Array を Int16Array に変換する関数
-      function floatTo16BitPCM(float32Array) {
-        const int16Array = new Int16Array(float32Array.length);
-        for (let i = 0; i < float32Array.length; i++) {
-          const s = Math.max(-1, Math.min(1, float32Array[i])); // クリッピング防止
-          int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; // -32768 〜 32767 に変換
+      function floatTo16BitPCM(f) {
+        const i = new Int16Array(f.length);
+        for (let n = 0; n < f.length; n++) {
+          const s = Math.max(-1, Math.min(1, f[n]));
+          i[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
-        return int16Array;
+        return i;
       }
-
-      const channelData = [];
-      for (let i = 0; i < numChannels; i++) {
-        channelData.push(audioBuffer.getChannelData(i));
-      }
-
-      const sampleBlockSize = 1152; // lamejsの推奨ブロックサイズ
+      const channelData = [audioBuffer.getChannelData(0), numChannels > 1 ? audioBuffer.getChannelData(1) : audioBuffer.getChannelData(0)];
+      const sampleBlockSize = 1152;
       for (let i = 0; i < audioBuffer.length; i += sampleBlockSize) {
-        const leftChunkFloat = channelData[0].subarray(i, i + sampleBlockSize);
-        const leftChunk = floatTo16BitPCM(leftChunkFloat); // Float32 → Int16 変換
-
-        let rightChunk;
-        if (numChannels > 1) {
-          const rightChunkFloat = channelData[1].subarray(i, i + sampleBlockSize);
-          rightChunk = floatTo16BitPCM(rightChunkFloat); // Float32 → Int16 変換
-        } else {
-          rightChunk = leftChunk; // モノラルの場合は左チャンネルを複製
-        }
-
-        const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-        if (mp3buf.length > 0) {
-          mp3Data.push(new Int8Array(mp3buf));
-        }
+        const left = floatTo16BitPCM(channelData[0].subarray(i, i + sampleBlockSize));
+        const right = floatTo16BitPCM(channelData[1].subarray(i, i + sampleBlockSize));
+        const mp3buf = mp3encoder.encodeBuffer(left, right);
+        if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
       }
-
       const mp3buf = mp3encoder.flush();
-      if (mp3buf.length > 0) {
-        mp3Data.push(new Int8Array(mp3buf));
-      }
-
-      console.log("MP3 encoding finished. Total chunks:", mp3Data.length);
+      if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
       return new Blob(mp3Data, { type: 'audio/mpeg' });
     }
   </script>
