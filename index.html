@@ -1,11 +1,177 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>録音くん</title>
-</head>
-<body>
-  <h1>録音くん</h1>
-  <p>ここから録音できます</p>
-</body>
-</html>
+/**
+ * API専用版（録音くん対応）
+ * doPostで音声データを受信し、Drive保存＋履歴記録
+ */
+
+// ===== 定数 =====
+const PARENT_FOLDER_NAME = "録音くん保存フォルダ";
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+const SUBFOLDER_SHEET_NAME = "シート1";
+const SUBFOLDER_CELL = "B1";
+const HISTORY_SHEET_NAME = "履歴";
+const HISTORY_HEADERS = ["ファイル名", "保存日時", "フォルダパス", "ファイルリンク"];
+
+
+// ===== APIエンドポイント =====
+function doPost(e) {
+  try {
+    if (!e.postData || !e.postData.contents) {
+      throw new Error("POSTデータがありません");
+    }
+
+    const data = JSON.parse(e.postData.contents);
+
+    const audioDataUrl = data.audioData;
+    const fileName = data.fileName || "recording";
+
+    const result = saveAudioFile(audioDataUrl, fileName);
+
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader("Access-Control-Allow-Origin", "*");
+
+  } catch (error) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        message: error.message
+      }))
+      .setMimeType(ContentService.MimeType.JSON)
+      .setHeader("Access-Control-Allow-Origin", "*");
+  }
+}
+
+
+// ===== 動作確認用 =====
+function doGet() {
+  return ContentService
+    .createTextOutput("録音APIサーバー稼働中")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+
+// ===== フォルダ取得 / 作成 =====
+function getOrCreateFolderIdByName(folderName, parentFolder = DriveApp.getRootFolder()) {
+  if (!folderName || typeof folderName !== 'string' || folderName.trim() === '') {
+    throw new Error("有効なフォルダ名が指定されていません。");
+  }
+
+  const folders = parentFolder.getFoldersByName(folderName);
+
+  if (folders.hasNext()) {
+    return folders.next().getId();
+  } else {
+    const newFolder = parentFolder.createFolder(folderName);
+    return newFolder.getId();
+  }
+}
+
+
+// ===== サブフォルダ名取得 =====
+function getSubFolderNameFromSheet() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SUBFOLDER_SHEET_NAME);
+
+    if (!sheet) return null;
+
+    const subFolderName = sheet.getRange(SUBFOLDER_CELL).getValue().toString().trim();
+    if (!subFolderName) return null;
+
+    return subFolderName.replace(/[\\\/:\*\?"<>\|]/g, '_');
+
+  } catch (e) {
+    return null;
+  }
+}
+
+
+// ===== 履歴シート作成 =====
+function createHistorySheetIfNotExists() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(HISTORY_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(HISTORY_SHEET_NAME);
+    sheet.appendRow(HISTORY_HEADERS);
+    sheet.getRange(1, 1, 1, HISTORY_HEADERS.length).setFontWeight("bold");
+  }
+
+  return sheet;
+}
+
+
+// ===== 履歴記録 =====
+function addRecordToHistorySheet(fileName, folderPathText, folderUrl, fileUrl) {
+  try {
+    const sheet = createHistorySheetIfNotExists();
+    const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+
+    const folderLink = `=HYPERLINK("${folderUrl}","${folderPathText}")`;
+    const fileLink = `=HYPERLINK("${fileUrl}","${fileName}")`;
+
+    sheet.appendRow([fileName, timestamp, folderLink, fileLink]);
+
+  } catch (e) {
+    Logger.log(e);
+  }
+}
+
+
+// ===== メイン処理（音声保存） =====
+function saveAudioFile(audioDataUrl, baseFileName) {
+  try {
+    if (!audioDataUrl || typeof audioDataUrl !== 'string') {
+      throw new Error("音声データが無効です");
+    }
+
+    const parentFolderId = getOrCreateFolderIdByName(PARENT_FOLDER_NAME);
+    const parentFolder = DriveApp.getFolderById(parentFolderId);
+
+    const subFolderName = getSubFolderNameFromSheet();
+
+    let targetFolder;
+    let folderPathText;
+    let folderUrl;
+
+    if (subFolderName) {
+      const subFolderId = getOrCreateFolderIdByName(subFolderName, parentFolder);
+      targetFolder = DriveApp.getFolderById(subFolderId);
+      folderPathText = `${parentFolder.getName()} > ${targetFolder.getName()}`;
+      folderUrl = targetFolder.getUrl();
+    } else {
+      targetFolder = parentFolder;
+      folderPathText = parentFolder.getName();
+      folderUrl = parentFolder.getUrl();
+    }
+
+    const parts = audioDataUrl.match(/^data:(.+);base64,(.+)$/);
+    if (!parts) throw new Error("Data URL形式エラー");
+
+    const mimeType = parts[1];
+    const base64Data = parts[2];
+
+    const decoded = Utilities.base64Decode(base64Data);
+    const fileName = baseFileName.endsWith(".mp3") ? baseFileName : baseFileName + ".mp3";
+
+    const blob = Utilities.newBlob(decoded, mimeType, fileName);
+    const file = targetFolder.createFile(blob);
+
+    const fileUrl = file.getUrl();
+
+    addRecordToHistorySheet(fileName, folderPathText, folderUrl, fileUrl);
+
+    return {
+      success: true,
+      fileName: fileName,
+      fileUrl: fileUrl
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+}
