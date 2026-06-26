@@ -88,7 +88,7 @@
       reader.onloadend = async () => {
         const base64Data = reader.result.split(',')[1];
         // ※GASのURLはご自身のものに書き換えてください
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbw9pqN9zzcRWxmLTSFlpl5G2lma2q2ZleNrxr9f0yaDg3K6LdKvyQDUJvTVUnf0MBJK/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyaza7eSIO-LoCAVK1X8nNOeESR3cmzvPhKkFYfDIjELEMfEUHiAq-E8euQ7cE1LJS6mQ/exec";
         
         // ★修正箇所：ファイル名を「グループ名_ニックネーム」で送信
         const fileName = `${groupSelect.value}_${nicknameInput.value}.mp3`;
