@@ -59,7 +59,7 @@
     let mediaRecorder, audioChunks = [], originalAudioBlob = null, stream = null;
 
     recordButton.onclick = async () => {
-      if (!groupSelect.value || !nicknameInput.value.trim()) return alert('選択と入力をしてください');
+      if (!groupSelect.value || !nicknameInput.value.trim()) return alert('グループ選択とニックネームを入力してください');
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
@@ -88,18 +88,20 @@
       reader.onloadend = async () => {
         const base64Data = reader.result.split(',')[1];
         // ※GASのURLはご自身のものに書き換えてください
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxz9YWkGtewII52AVqWVeVs10zxKXEZtXtlFvnEUnCo_M2b8cbo8ZCEYRBEVjqKuUwJiQ/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw9pqN9zzcRWxmLTSFlpl5G2lma2q2ZleNrxr9f0yaDg3K6LdKvyQDUJvTVUnf0MBJK/exec";
+        
+        // ★修正箇所：ファイル名を「グループ名_ニックネーム」で送信
+        const fileName = `${groupSelect.value}_${nicknameInput.value}.mp3`;
         
         await fetch(GAS_URL, {
           method: "POST", mode: "no-cors",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `data=${encodeURIComponent(base64Data)}&filename=${groupSelect.value}_${nicknameInput.value}.mp3&mimetype=audio/mpeg`
+          body: `data=${encodeURIComponent(base64Data)}&filename=${encodeURIComponent(fileName)}&mimetype=audio/mpeg`
         });
         statusDisplay.textContent = '🎉 保存完了！'; statusDisplay.className = 'success';
       };
     };
 
-    // encodeToMp3 関数の中身はそのまま維持してください
     async function encodeToMp3(a){const c=new(window.AudioContext||window.webkitAudioContext)(),b=await a.arrayBuffer(),d=await c.decodeAudioData(b),e=d.numberOfChannels,f=d.sampleRate,g=new lamejs.Mp3Encoder(e,f,128),h=[],i=n=>{const t=new Int16Array(n.length);for(let j=0;j<n.length;j++){const s=Math.max(-1,Math.min(1,n[j]));t[j]=s<0?s*32768:s*32767}return t},j=[d.getChannelData(0),e>1?d.getChannelData(1):d.getChannelData(0)],k=1152;for(let l=0;l<d.length;l+=k){const m=i(j[0].subarray(l,l+k)),n=i(j[1].subarray(l,l+k)),o=g.encodeBuffer(m,n);if(o.length>0)h.push(new Int8Array(o))}const p=g.flush();return p.length>0&&h.push(new Int8Array(p)),new Blob(h,{type:"audio/mpeg"})}
   </script>
 </body>
