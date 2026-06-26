@@ -25,21 +25,21 @@
 <body>
   <div class="container">
     <h1>🎙️ 録音くん</h1>
-    
     <div class="input-group">
       <label>✨ グループを選択:</label>
       <select id="groupSelect">
         <option value="">-- グループを選択してください --</option>
-        <option value="たぬきチーム">たぬきチーム</option>
-        <option value="クールファイブ">クールファイブ</option>
+        <script>
+          for(let i=1; i<=20; i++) {
+            document.write(`<option value="グループ${i}">グループ${i}</option>`);
+          }
+        </script>
       </select>
     </div>
-
     <div class="input-group">
       <label>✨ ニックネーム:</label>
       <input type="text" id="nicknameInput" placeholder="例: 山田太郎">
     </div>
-
     <div class="button-group">
       <button id="recordButton">🔴 録音開始</button>
       <button id="stopButton" disabled>⏹️ 停止</button>
@@ -56,13 +56,10 @@
     const groupSelect = document.getElementById('groupSelect');
     const nicknameInput = document.getElementById('nicknameInput');
     
-    let mediaRecorder;
-    let audioChunks = [];
-    let originalAudioBlob = null;
-    let stream = null;
+    let mediaRecorder, audioChunks = [], originalAudioBlob = null, stream = null;
 
     recordButton.onclick = async () => {
-      if (!groupSelect.value || !nicknameInput.value.trim()) return alert('グループ選択とニックネーム入力をしてください');
+      if (!groupSelect.value || !nicknameInput.value.trim()) return alert('選択と入力をしてください');
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
@@ -73,16 +70,14 @@
         audioChunks = [];
       };
       mediaRecorder.start();
-      recordButton.disabled = true;
-      stopButton.disabled = false;
+      recordButton.disabled = true; stopButton.disabled = false;
       statusDisplay.textContent = '🎤 録音中...';
     };
 
     stopButton.onclick = () => {
       mediaRecorder.stop();
       stream.getTracks().forEach(t => t.stop());
-      recordButton.disabled = false;
-      stopButton.disabled = true;
+      recordButton.disabled = false; stopButton.disabled = true;
     };
 
     saveButton.onclick = async () => {
@@ -92,47 +87,20 @@
       reader.readAsDataURL(mp3Blob);
       reader.onloadend = async () => {
         const base64Data = reader.result.split(',')[1];
+        // ※GASのURLはご自身のものに書き換えてください
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxSMniqNo-OIEPt7AqULUXHi1ZWPQW-G0iOv05e__9EVTc9HXn7lWAMu_dcCyquQ2rjNA/exec";
         
         await fetch(GAS_URL, {
-          method: "POST",
-          mode: "no-cors",
+          method: "POST", mode: "no-cors",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `data=${encodeURIComponent(base64Data)}&filename=${groupSelect.value}_${nicknameInput.value}.mp3&mimetype=audio/mpeg`
         });
-        statusDisplay.textContent = '🎉 保存完了！';
-        statusDisplay.className = 'success';
+        statusDisplay.textContent = '🎉 保存完了！'; statusDisplay.className = 'success';
       };
     };
 
-    async function encodeToMp3(audioBlob) {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      const numChannels = audioBuffer.numberOfChannels;
-      const sampleRate = audioBuffer.sampleRate;
-      const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, 128);
-      const mp3Data = [];
-      function floatTo16BitPCM(f) {
-        const i = new Int16Array(f.length);
-        for (let n = 0; n < f.length; n++) {
-          const s = Math.max(-1, Math.min(1, f[n]));
-          i[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        return i;
-      }
-      const channelData = [audioBuffer.getChannelData(0), numChannels > 1 ? audioBuffer.getChannelData(1) : audioBuffer.getChannelData(0)];
-      const sampleBlockSize = 1152;
-      for (let i = 0; i < audioBuffer.length; i += sampleBlockSize) {
-        const left = floatTo16BitPCM(channelData[0].subarray(i, i + sampleBlockSize));
-        const right = floatTo16BitPCM(channelData[1].subarray(i, i + sampleBlockSize));
-        const mp3buf = mp3encoder.encodeBuffer(left, right);
-        if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
-      }
-      const mp3buf = mp3encoder.flush();
-      if (mp3buf.length > 0) mp3Data.push(new Int8Array(mp3buf));
-      return new Blob(mp3Data, { type: 'audio/mpeg' });
-    }
+    // encodeToMp3 関数の中身はそのまま維持してください
+    async function encodeToMp3(a){const c=new(window.AudioContext||window.webkitAudioContext)(),b=await a.arrayBuffer(),d=await c.decodeAudioData(b),e=d.numberOfChannels,f=d.sampleRate,g=new lamejs.Mp3Encoder(e,f,128),h=[],i=n=>{const t=new Int16Array(n.length);for(let j=0;j<n.length;j++){const s=Math.max(-1,Math.min(1,n[j]));t[j]=s<0?s*32768:s*32767}return t},j=[d.getChannelData(0),e>1?d.getChannelData(1):d.getChannelData(0)],k=1152;for(let l=0;l<d.length;l+=k){const m=i(j[0].subarray(l,l+k)),n=i(j[1].subarray(l,l+k)),o=g.encodeBuffer(m,n);if(o.length>0)h.push(new Int8Array(o))}const p=g.flush();return p.length>0&&h.push(new Int8Array(p)),new Blob(h,{type:"audio/mpeg"})}
   </script>
 </body>
 </html>
